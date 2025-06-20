@@ -11,7 +11,7 @@ The DEX enables users to:
 
 🔄 Swap tokens via automated market-making (AMM) using a constant product formula
 
-#📂 Contracts
+# 📂 Contracts
 1. Pair.sol
 💧 Core liquidity pool contract managing two tokens
 
@@ -37,7 +37,7 @@ The DEX enables users to:
 
 🧮 Contains helper functions to calculate swap outputs and optimal liquidity amounts
 
-#✨ Features
+# ✨ Features
 🪙 ERC-20 token support: Uses OpenZeppelin IERC20 interface for token transfers
 
 📈 Constant product AMM: Implements x * y = k invariant with a 0.3% swap fee
@@ -50,7 +50,7 @@ The DEX enables users to:
 
 ⚡ Gas optimization: Uses uint112 for reserve storage and minimizes redundant calls
 
-#⚙️ Usage
+# ⚙️ Usage
 📦 Deploy the Factory contract
 
 🛠️ Deploy the Router contract with the Factory address
@@ -63,16 +63,16 @@ The DEX enables users to:
 
 🔥 Remove liquidity by burning LP tokens and receiving underlying tokens back
 
-#📋 Requirements
+# 📋 Requirements
 🛠️ Solidity ^0.8.20
 
 📚 OpenZeppelin Contracts (IERC20, Math)
 
-#📄 License
+# 📄 License
 MIT License
 
-#🤝 Contributing
+# 🤝 Contributing
 Feel free to open issues or submit pull requests for improvements or bug fixes.
 
-#📬 Contact
+# 📬 Contact
 For questions, reach out via GitHub issues or contact the repository owner.

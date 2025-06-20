@@ -62,3 +62,17 @@ Swap tokens via automated market-making (AMM) using a constant product formula
 
 - Remove liquidity by burning LP tokens and receiving underlying tokens back.
 
+#Requirements
+- Solidity ^0.8.20
+
+- OpenZeppelin Contracts (IERC20, Math)
+
+#License
+MIT License
+
+#Contributing
+Feel free to open issues or submit pull requests for improvements or bug fixes.
+
+#Contact
+For questions, reach out via GitHub issues or contact the repository owner.
+

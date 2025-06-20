@@ -5,6 +5,8 @@ import {IERC20} from "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol
 import {Math} from "lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 contract Pair {
+    address public factory;
+
     // Tokens in this pair
     address public token0;
     address public token1;
@@ -30,9 +32,13 @@ contract Pair {
     );
     event Sync(uint112 reserve0, uint112 reserve1);
 
-    modifier onlyTokens() {
-        require(msg.sender == token0 || msg.sender == token1, "Not token");
+    modifier onlyFactory() {
+        require(msg.sender == factory, "Pair: only factory can call");
         _;
+    }
+
+    constructor(address _factory) {
+        factory = _factory;
     }
 
     function getReserves() public view returns (uint112, uint112) {
@@ -89,7 +95,14 @@ contract Pair {
         emit Mint(msg.sender, amount0, amount1);
     }
 
-    // Removes liquidity from the pool
+    /**
+     * @notice Burns liquidity tokens to withdraw underlying assets.
+     * @dev The caller must send the LP tokens to this contract before calling burn().
+     *      This function burns the LP tokens held by the contract, then transfers
+     *      the underlying tokens to the `to` address.
+     *      Typically, `burn()` is called by the Router contract’s `removeLiquidity()` function,
+     *      which handles transferring LP tokens from the user before calling this.
+     */
     function burn(address to) external returns (uint amount0, uint amount1) {
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
@@ -166,7 +179,7 @@ contract Pair {
     }
 
     // Initialization for `CREATE2` deployments
-    function initialize(address _token0, address _token1) external {
+    function initialize(address _token0, address _token1) external onlyFactory {
         require(
             token0 == address(0) && token1 == address(0),
             "Already initialized"

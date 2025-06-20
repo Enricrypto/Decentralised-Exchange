@@ -1,5 +1,3 @@
-# Decentralised-Exchange
-
 # Decentralised Exchange (DEX) Solidity Contracts
 This repository contains a simple implementation of a decentralized exchange (DEX) in Solidity, inspired by Uniswap V2. It includes contracts for creating liquidity pools (pairs), managing liquidity, and swapping ERC-20 tokens.
 

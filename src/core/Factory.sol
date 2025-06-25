@@ -15,7 +15,7 @@ contract Factory {
         uint
     );
 
-    // ✅ only one unique pool per token pair is allowed.
+    // Only one unique pool per token pair is allowed.
     function createPair(
         address tokenA,
         address tokenB
@@ -44,7 +44,18 @@ contract Factory {
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
 
-        Pair(pair).initialize(token0, token1);
+        // Fetch token symbols for naming LP token
+        string memory symbol0 = IERC20(token0).symbol();
+        string memory symbol1 = IERC20(token1).symbol();
+
+        string memory lpName = string(
+            abi.encodePacked("LP Token: ", symbol0, " / ", symbol1)
+        );
+        string memory lpSymbol = string(
+            abi.encodePacked("LP-", symbol0, "-", symbol1)
+        );
+
+        Pair(pair).initialize(token0, token1, lpName, lpSymbol);
 
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair; // populate mapping both ways

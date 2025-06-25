@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import {Math} from "lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract Pair {
+contract Pair is ERC20, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     address public factory;
 
     // Tokens in this pair
     address public token0;
     address public token1;
 
+    // LP tokens custom name and symbol
+    string private name;
+    string private symbol;
+
     // Reserves of token0 and token1 (stored as 112-bit integers to save gas)
     uint112 private reserve0;
     uint112 private reserve1;
     uint32 private blockTimestampLast;
-
-    // LP token tracking
-    uint256 public totalSupply;
-    mapping(address => uint256) public balanceOf;
 
     event Mint(address indexed sender, uint amount0, uint amount1);
     event Burn(address indexed sender, uint amount0, uint amount1, address to);
@@ -32,13 +37,14 @@ contract Pair {
     );
     event Sync(uint112 reserve0, uint112 reserve1);
 
+    constructor(address _factory) ERC20("", "") {
+        require(_factory != address(0), "Invalid factory");
+        factory = _factory;
+    }
+
     modifier onlyFactory() {
         require(msg.sender == factory, "Pair: only factory can call");
         _;
-    }
-
-    constructor(address _factory) {
-        factory = _factory;
     }
 
     function getReserves() public view returns (uint112, uint112) {
@@ -62,13 +68,17 @@ contract Pair {
     // create a function to calculate tokens send to LP
 
     // Adds liquidity to the pool
-    function mint(address to) external returns (uint liquidity) {
-        (uint112 _reserve0, uint112 _reserve1) = getReserves();
-
+    function mint(address to) external nonReentrant returns (uint liquidity) {
+        require(
+            token0 != address(0) && token1 != address(0),
+            "Pair not initialized"
+        );
         // Using balances and reserves separately prevents minting if no actual tokens were added.
         // Get token balances after user sent tokens to the contract
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
+
+        (uint112 _reserve0, uint112 _reserve1) = getReserves();
 
         // Calculate how many tokens were added
         uint amount0 = balance0 - _reserve0;
@@ -76,20 +86,19 @@ contract Pair {
 
         // First LP mints sqrt(x*y) LP tokens
         // Others mint based on proportion of reserves
-        if (totalSupply == 0) {
+        if (totalSupply() == 0) {
             liquidity = Math.sqrt(amount0 * amount1);
         } else {
             liquidity = Math.min(
-                (amount0 * totalSupply) / _reserve0,
-                (amount1 * totalSupply) / _reserve1
+                (amount0 * totalSupply()) / _reserve0,
+                (amount1 * totalSupply()) / _reserve1
             );
         }
 
         require(liquidity > 0, "Insufficient Liquidity minted");
 
         // Mint LP tokens
-        balanceOf[to] += liquidity;
-        totalSupply += liquidity;
+        _mint(to, liquidity); // Use ERC20 _mint
 
         _update(balance0, balance1);
         emit Mint(msg.sender, amount0, amount1);
@@ -103,27 +112,28 @@ contract Pair {
      *      Typically, `burn()` is called by the Router contract’s `removeLiquidity()` function,
      *      which handles transferring LP tokens from the user before calling this.
      */
-    function burn(address to) external returns (uint amount0, uint amount1) {
+    function burn(
+        address to
+    ) external nonReentrant returns (uint amount0, uint amount1) {
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
 
         // Burn liquidity that was sent to this contract by the user
-        uint liquidity = balanceOf[address(this)];
+        uint liquidity = balanceOf(address(this));
         require(liquidity > 0, "No liquidity to burn");
 
-        // Calculate share of pool
-        amount0 = (liquidity * balance0) / totalSupply;
-        amount1 = (liquidity * balance1) / totalSupply;
+        // Calculate proportional share
+        amount0 = (liquidity * balance0) / totalSupply();
+        amount1 = (liquidity * balance1) / totalSupply();
 
-        require(amount0 > 0 && amount1 > 0, "Insufficient amount");
+        require(amount0 > 0 && amount1 > 0, "Insufficient liquidity burned");
 
         // Burn LP tokens user sent to the pair contract
-        balanceOf[address(this)] -= liquidity;
-        totalSupply -= liquidity;
+        _burn(address(this), liquidity); // Use ERC20 _burn
 
         // Transfer tokens back to user
-        IERC20(token0).transfer(to, amount0);
-        IERC20(token1).transfer(to, amount1);
+        IERC20(token0).safeTransfer(to, amount0);
+        IERC20(token1).safeTransfer(to, amount1);
 
         // Update reserves
         _update(
@@ -136,25 +146,44 @@ contract Pair {
 
     // Swaps tokens from one side to the other
     // You’re allowed to specify one token to receive (amount0Out or amount1Out), and leave the other as 0
-    // FIXED THIS, no amountIn, should work by itself
-    // how to deal with slippage?
-    function swap(uint amount0Out, uint amount1Out, address to) external {
+    // - FIXED THIS, no amountIn, should work by itself.
+    // 1. you require exactly one of amount0Out or amount1Out to be non-zero (never both)
+    // 2. The check if (amount0Out > 0) and if (amount1Out > 0) helps infer which token is input and which is output
+    // - How to deal with slippage?
+    // 1. It lets the swap function be simple and generic, without needing to know about user preferences like slippage tolerance.
+    // 2. It forces users to use the router to perform swaps safely, otherwise calling swap directly is risky and inconvenient.
+    function swap(
+        uint amount0Out,
+        uint amount1Out,
+        address to
+    ) external nonReentrant {
+        // Check that exactly one token amount is being output
         require(amount0Out > 0 || amount1Out > 0, "No output requested");
+        require(
+            (amount0Out > 0 && amount1Out == 0) ||
+                (amount1Out > 0 && amount0Out == 0),
+            "Only one token can be swapped out"
+        );
+
+        // It prevents the recipient of the swapped tokens from being one of the tokens in the pair contract itself
+        require(to != token0 && to != token1, "Invalid to address");
+
+        // Get the current stored reserves before the swap happens and checks liquidity
         (uint112 _reserve0, uint112 _reserve1) = getReserves();
         require(
             amount0Out < _reserve0 && amount1Out < _reserve1,
             "Insufficient Liquidity"
         );
 
-        // Send output tokens to recipient
-        if (amount0Out > 0) IERC20(token0).transfer(to, amount0Out);
-        if (amount1Out > 0) IERC20(token1).transfer(to, amount1Out);
+        // Send output tokens to recipient. Transfer the token the user wants to receive
+        if (amount0Out > 0) IERC20(token0).safeTransfer(to, amount0Out); // user wants to get token0 out and must send in token1
+        if (amount1Out > 0) IERC20(token1).safeTransfer(to, amount1Out); // user wants to get token1 out and must send in token0
 
-        // Recalculate balances after swap
+        // Calculate the new balances after sending tokens out
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
 
-        // Figure out how much was sent as input
+        // Infer how much of each token was sent into the contract
         uint amount0In = balance0 > _reserve0 - amount0Out
             ? balance0 - (_reserve0 - amount0Out)
             : 0;
@@ -162,32 +191,53 @@ contract Pair {
             ? balance1 - (_reserve1 - amount1Out)
             : 0;
 
+        // Can’t swap out tokens without sending some tokens in
         require(amount0In > 0 || amount1In > 0, "Insufficient input");
 
-        // Apply 0.3% fee
+        // Apply 0.3% fee and check the constant product invariant
         uint balance0Adjusted = balance0 * 1000 - amount0In * 3;
         uint balance1Adjusted = balance1 * 1000 - amount1In * 3;
         require(
             balance0Adjusted * balance1Adjusted >=
-                uint(_reserve0) * uint(_reserve1) * 1000 ** 2,
+                (uint(_reserve0) * uint(_reserve1)) * 1000 ** 2,
             "Invariant violation"
         );
 
+        // Store the new reserves for future swaps
         _update(balance0, balance1);
 
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
 
     // Initialization for `CREATE2` deployments
-    function initialize(address _token0, address _token1) external onlyFactory {
+    function initialize(
+        address _token0,
+        address _token1,
+        string memory _name,
+        string memory _symbol
+    ) external onlyFactory {
         require(
             token0 == address(0) && token1 == address(0),
             "Already initialized"
         );
 
-        // Sort tokens by addresses
+        require(_token0 != _token1, "Identical tokens");
+        require(_token0 != address(0) && _token1 != address(0), "Zero address");
+
         (token0, token1) = _token0 < _token1
             ? (_token0, _token1)
             : (_token1, _token0);
+
+        name = _name;
+        symbol = _symbol;
+    }
+
+    // Override name and symbol functions from ERC-20
+    function name() public view override returns (string memory) {
+        return name;
+    }
+
+    function symbol() public view override returns (string memory) {
+        return symbol;
     }
 }

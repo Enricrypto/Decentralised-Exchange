@@ -3,8 +3,12 @@ pragma solidity ^0.8.20;
 
 import "../core/Factory.sol";
 import "../core/Pair.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract Router {
+contract Router is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     Factory public factory;
 
     constructor(address _factory) {
@@ -28,7 +32,11 @@ contract Router {
         uint amountAMin, // Minimum tokenA accepted (slippage protection)
         uint amountBMin, // Minimum tokenB accepted (slippage protection)
         address to
-    ) external returns (uint amountA, uint amountB, uint liquidity) {
+    )
+        external
+        nonReentrant
+        returns (uint amountA, uint amountB, uint liquidity)
+    {
         // get/create pair
         address pairAddress = factory.getPair(tokenA, tokenB);
         if (pairAddress == address(0)) {
@@ -89,8 +97,8 @@ contract Router {
         }
 
         // Transfer tokens from the user to the pair contract
-        IERC20(tokenA).transferFrom(msg.sender, pairAddress, amountA);
-        IERC20(tokenB).transferFrom(msg.sender, pairAddress, amountB);
+        IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
+        IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
 
         uint liquidity = pair.mint(msg.sender);
 
@@ -105,14 +113,18 @@ contract Router {
         uint amountAMin, // Min tokenA to receive
         uint amountBMin, // Min tokenB to receive
         address to
-    ) external returns (uint amountA, uint amountB) {
+    ) external nonReentrant returns (uint amountA, uint amountB) {
         address pairAddress = factory.getPair(tokenA, tokenB);
         require(pairAddress != address(0), "Pair doesn't exist");
 
         Pair pair = Pair(pairAddress);
 
         // Transfer LP tokens from user to pair contract
-        IERC20(pairAddress).transferFrom(msg.sender, pairAddress, liquidity);
+        IERC20(pairAddress).safeTransferFrom(
+            msg.sender,
+            pairAddress,
+            liquidity
+        );
 
         // Burn LP tokens and return tokens to `to`
         (uint amount0, uint amount1) = pair.burn(to);
@@ -154,9 +166,9 @@ contract Router {
         require(amountOut > 0, "Insufficient output amount");
 
         // Transfer amountIn tokens from user to pair contract
-        IERC20(tokenIn).transferFrom(msg.sender, pairAddr, amountIn);
+        IERC20(tokenIn).safeTransferFrom(msg.sender, pairAddr, amountIn);
 
-        // Call pair.swap() - specify amounts out depending on token order
+        // Call pair.swap() - SPECIFY AMOUNT OUT DEPENDING ON TOKEN ORDER
         if (tokenIn == pair.token0()) {
             // Output tokens are token1, so amount0Out = 0, amount1Out = amountOut
             pair.swap(0, amountOut, msg.sender);

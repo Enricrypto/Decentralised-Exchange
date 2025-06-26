@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// proxy holds data and contract pair has implementation
+
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import {Math} from "lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
@@ -47,26 +49,6 @@ contract Pair is ERC20, ReentrancyGuard {
         _;
     }
 
-    function getReserves() public view returns (uint112, uint112) {
-        return (reserve0, reserve1);
-    }
-
-    // Updates internal reserves to match current token balances
-    function _update(uint balance0, uint balance1) private {
-        require(
-            balance0 <= type(uint112).max && balance1 <= type(uint112).max,
-            "Overflow"
-        );
-
-        reserve0 = uint112(balance0);
-        reserve1 = uint112(balance1);
-        blockTimestampLast = uint32(block.timestamp);
-
-        emit Sync(reserve0, reserve1);
-    }
-
-    // create a function to calculate tokens send to LP
-
     // Adds liquidity to the pool
     function mint(address to) external nonReentrant returns (uint liquidity) {
         require(
@@ -80,7 +62,8 @@ contract Pair is ERC20, ReentrancyGuard {
 
         (uint112 _reserve0, uint112 _reserve1) = getReserves();
 
-        // Calculate how many tokens were added
+        // Calculate how many tokens were added. If someone tries to mint without adding real tokens,
+        // the added amounts (amount0, amount1) will be 0, and the mint will revert or mint 0 LP tokens.
         uint amount0 = balance0 - _reserve0;
         uint amount1 = balance1 - _reserve1;
 
@@ -97,9 +80,10 @@ contract Pair is ERC20, ReentrancyGuard {
 
         require(liquidity > 0, "Insufficient Liquidity minted");
 
-        // Mint LP tokens
+        // Mint LP tokens to user
         _mint(to, liquidity); // Use ERC20 _mint
 
+        // update reserves of LP pair
         _update(balance0, balance1);
         emit Mint(msg.sender, amount0, amount1);
     }
@@ -118,7 +102,8 @@ contract Pair is ERC20, ReentrancyGuard {
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
 
-        // Burn liquidity that was sent to this contract by the user
+        // Burn liquidity that was sent to this contract by the user. If no liquidity in contract
+        // function reverts.
         uint liquidity = balanceOf(address(this));
         require(liquidity > 0, "No liquidity to burn");
 
@@ -126,6 +111,7 @@ contract Pair is ERC20, ReentrancyGuard {
         amount0 = (liquidity * balance0) / totalSupply();
         amount1 = (liquidity * balance1) / totalSupply();
 
+        // Checking for "dust" or negligible amounts being burned
         require(amount0 > 0 && amount1 > 0, "Insufficient liquidity burned");
 
         // Burn LP tokens user sent to the pair contract
@@ -135,7 +121,7 @@ contract Pair is ERC20, ReentrancyGuard {
         IERC20(token0).safeTransfer(to, amount0);
         IERC20(token1).safeTransfer(to, amount1);
 
-        // Update reserves
+        // Update reserves of LP pair
         _update(
             IERC20(token0).balanceOf(address(this)),
             IERC20(token1).balanceOf(address(this))
@@ -209,6 +195,7 @@ contract Pair is ERC20, ReentrancyGuard {
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
 
+    // HELPER FUNCTIONS
     // Initialization for `CREATE2` deployments
     function initialize(
         address _token0,
@@ -224,12 +211,32 @@ contract Pair is ERC20, ReentrancyGuard {
         require(_token0 != _token1, "Identical tokens");
         require(_token0 != address(0) && _token1 != address(0), "Zero address");
 
+        // rearrange order of tokens
         (token0, token1) = _token0 < _token1
             ? (_token0, _token1)
             : (_token1, _token0);
 
         name = _name;
         symbol = _symbol;
+    }
+
+    // Function to get current reserves of LP contract
+    function getReserves() public view returns (uint112, uint112) {
+        return (reserve0, reserve1);
+    }
+
+    // Updates internal reserves to match current token balances
+    function _update(uint balance0, uint balance1) private {
+        require(
+            balance0 <= type(uint112).max && balance1 <= type(uint112).max,
+            "Overflow"
+        );
+
+        reserve0 = uint112(balance0);
+        reserve1 = uint112(balance1);
+        blockTimestampLast = uint32(block.timestamp);
+
+        emit Sync(reserve0, reserve1);
     }
 
     // Override name and symbol functions from ERC-20

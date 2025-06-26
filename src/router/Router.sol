@@ -11,17 +11,43 @@ contract Router is ReentrancyGuard {
 
     Factory public factory;
 
+    event LiquidityAdded(
+        address indexed provider,
+        address indexed tokenA,
+        address indexed tokenB,
+        uint amountA,
+        uint amountB,
+        uint liquidity
+    );
+
+    event LiquidityRemoved(
+        address indexed user,
+        address indexed tokenA,
+        address indexed tokenB,
+        uint liquidity,
+        uint amountA,
+        uint amountB,
+        address to
+    );
+
+    event SwapExecuted(
+        address indexed user,
+        address tokenIn,
+        address tokenOut,
+        uint amountIn,
+        uint amountOut
+    );
+
+    event MultiSwap(
+        address indexed user,
+        address[] path,
+        uint amountIn,
+        uint amountOut
+    );
+
     constructor(address _factory) {
         require(_factory != address(0), "Invalid factory");
         factory = Factory(_factory);
-    }
-
-    // Helper to get pair address from factory for tokens
-    function getPair(
-        address tokenA,
-        address tokenB
-    ) public view returns (address) {
-        return factory.getPair(tokenA, tokenB);
     }
 
     function addLiquidity(
@@ -102,6 +128,15 @@ contract Router is ReentrancyGuard {
 
         uint liquidity = pair.mint(msg.sender);
 
+        emit LiquidityAdded(
+            msg.sender,
+            tokenA,
+            tokenB,
+            amountA,
+            amountB,
+            liquidity
+        );
+
         return (amountA, amountB, liquidity);
     }
 
@@ -135,9 +170,22 @@ contract Router is ReentrancyGuard {
             ? (amount0, amount1)
             : (amount1, amount0);
 
+        // Prevents "dust" or rounding errors from allowing a meaningless removeLiquidity call
+        require(amountA > 0 && amountB > 0, "Zero output");
+
         // Slippage protection
         require(amountA >= amountAMin, "Insufficient A amount");
         require(amountB >= amountBMin, "Insufficient B amount");
+
+        emit LiquidityRemoved(
+            msg.sender,
+            tokenA,
+            tokenB,
+            liquidity,
+            amountA,
+            amountB,
+            to
+        );
     }
 
     // Swap tokenIn -> tokenOut for exact amountIn
@@ -146,7 +194,8 @@ contract Router is ReentrancyGuard {
     function swapTokenForToken(
         address tokenIn,
         address tokenOut,
-        uint amountIn
+        uint amountIn,
+        uint minAmountOut
     ) external returns (uint amountOut) {
         address pairAddr = getPair(tokenIn, tokenOut);
         require(pairAddr != address(0), "Pair does not exist");
@@ -163,7 +212,7 @@ contract Router is ReentrancyGuard {
 
         // Calculate output amount using helper function (including platform fee)
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
-        require(amountOut > 0, "Insufficient output amount");
+        require(amountOut >= minAmountOut, "Insufficient output amount");
 
         // Transfer amountIn tokens from user to pair contract
         IERC20(tokenIn).safeTransferFrom(msg.sender, pairAddr, amountIn);
@@ -176,9 +225,85 @@ contract Router is ReentrancyGuard {
             // Output tokens are token0, so amount0Out = amountOut, amount1Out = 0
             pair.swap(amountOut, 0, msg.sender);
         }
+
+        // Emit event
+        emit SwapExecuted(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
+    }
+
+    function multiHopSwap(
+        address[] calldata path, // array of token addresses
+        uint amountIn,
+        uint minAmountOut
+    ) external returns (uint amountOut) {
+        require(path.length >= 2, "Path too short");
+
+        // Transfer the first token from sender to the first pair
+        // path[0] = input token, path[1] = first intermediate token, path[2] = final output token
+        // The user has sent amountIn of path[0] (TokenA) to the first pair (TokenA/TokenB)
+        IERC20(path[0]).safeTransferFrom(
+            msg.sender,
+            getPair(path[0], path[1]), // first pair in the swap path
+            amountIn
+        );
+        for (uint = 0; path.length - 1; i++) {
+            address input = path[i]; // token sent to the pair
+            address output = path[i + 1];
+            address pairAddr = getPair(input, output);
+            require(pairAddr != address(0), "Pair does not exist");
+
+            Pair pair = Pair(pairAddr);
+
+            uint currentAmountIn = amountIn;
+            (uint reserve0, uint reserve1) = pair.getReserves();
+
+            // Determine the direction of the swap
+            (uint reserveIn, uint reserveOut) = input == pair.token0()
+                ? (reserve0, reserve1)
+                : (reserve1, reserve0);
+
+            // Calculate amountOut
+            uint amountOutNext = getAmountOut(
+                currentAmountIn,
+                reserveIn,
+                reserveOut
+            );
+
+            // Determine output params for swap
+            (uint amount0Out, uint amount1Out) = input == pair.token0()
+                ? (uint(0), amountOutNext)
+                : (amountOutNext, uint(0));
+
+            // Determine recipient: next pair or final recipient
+            // (path.length - 2) is the index of the second-to-last token, there’s at least one more hop coming.
+            // input = output and output = path[i + 2] for second swap
+            address to = i < path.length - 2
+                ? getPair(output, path[i + 2])
+                : msg.sender;
+
+            // Perform the swap
+            pair.swap(amount0Out, amount1Out, to);
+
+            // update amountIn for next transaction
+            currentAmountIn = amountOutNext;
+        }
+
+        // Final output check
+        require(currentAmountIn >= minAmountOut, "Slippage: Output too low");
+        amountOut = currentAmountIn;
+
+        emit MultiSwap(msg.sender, path, amountIn, amountOut);
     }
 
     // HELPER FUNCTIONS
+
+    // Helper function to get pair address from factory for tokens
+    function getPair(
+        address tokenA,
+        address tokenB
+    ) public view returns (address) {
+        return factory.getPair(tokenA, tokenB);
+    }
+
     // Function called by the UX (frontend) to get the correct amount of tokenB. You pass the amount of tokenA, to know
     // the value on tokenB required to provide liquidity
     function quote(

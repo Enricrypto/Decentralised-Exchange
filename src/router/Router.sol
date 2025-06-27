@@ -53,10 +53,10 @@ contract Router is ReentrancyGuard {
     function addLiquidity(
         address tokenA,
         address tokenB,
-        uint amountADesired,
-        uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin,
+        uint amountADesired, // How much the user wants to add of tokenA
+        uint amountBDesired, // How much the user wants to add of tokenB
+        uint amountAMin, // Minimum tokenA accepted (slippage protection)
+        uint amountBMin, // Minimum tokenB accepted (slippage protection)
         address to
     )
         external
@@ -65,30 +65,59 @@ contract Router is ReentrancyGuard {
     {
         require(to != address(0), "Invalid LP recipient");
 
-        // Get or create the pair
+        // Get or create pair
         address pairAddress = factory.getPair(tokenA, tokenB);
         if (pairAddress == address(0)) {
             pairAddress = factory.createPair(tokenA, tokenB);
         }
 
-        // Determine optimal amounts based on reserves
-        (amountA, amountB) = _calculateLiquidityAmounts(
-            pairAddress,
-            amountADesired,
-            amountBDesired,
-            amountAMin,
-            amountBMin
-        );
+        Pair pair = Pair(pairAddress);
 
+        // Scoped block to avoid "stack too deep" error from too many local variables
+        {
+            (uint reserveA, uint reserveB) = pair.getReserves(); // Reserves already match tokenA/tokenB order
+
+            if (reserveA == 0 && reserveB == 0) {
+                // First liquidity provider
+                // No ratio yet, so accept user's desired amounts as is
+                (amountA, amountB) = (amountADesired, amountBDesired);
+            } else {
+                // Maintain ratio based on reserves
+                uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
+                if (amountBOptimal <= amountBDesired) {
+                    // The optimal amount of B needed is less than or equal to what user wants to provide
+                    // Check if optimal B amount satisfies minimum required (slippage protection)
+                    require(
+                        amountBOptimal >= amountBMin,
+                        "Insufficient B amount"
+                    );
+                    // We use all of amountADesired and we reduce token B to amountBOptimal (to match the correct ratio).
+                    (amountA, amountB) = (amountADesired, amountBOptimal);
+                } else {
+                    uint amountAOptimal = quote(
+                        amountBDesired,
+                        reserveB,
+                        reserveA
+                    );
+                    // Check that optimal A is not more than what user wants to provide (should be true)
+                    require(
+                        amountAOptimal <= amountADesired,
+                        "A optimal too high"
+                    );
+                    // Check if optimal A amount meets minimum amount required (slippage protection)
+                    require(
+                        amountAOptimal >= amountAMin,
+                        "Insufficient A amount"
+                    );
+                    // Use user's full amountBDesired and optimal amountAOptimal to maintain ratio
+                    (amountA, amountB) = (amountAOptimal, amountBDesired);
+                }
+            }
+        }
         // Transfer tokens and mint LP
-        liquidity = _transferAndMint(
-            tokenA,
-            tokenB,
-            pairAddress,
-            amountA,
-            amountB,
-            to
-        );
+        IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
+        IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
+        liquidity = pair.mint(to);
 
         emit LiquidityAdded(
             msg.sender,
@@ -98,6 +127,7 @@ contract Router is ReentrancyGuard {
             amountB,
             liquidity
         );
+        return (amountA, amountB, liquidity);
     }
 
     // User can remove partial or all liquidity
@@ -207,7 +237,6 @@ contract Router is ReentrancyGuard {
         require(minAmountOut > 0, "Zero min output");
 
         // Transfer the first token from sender to the first pair
-        // path[0] = input token, path[1] = first intermediate token, path[2] = final output token
         IERC20(path[0]).safeTransferFrom(
             msg.sender,
             getPair(path[0], path[1]), // first pair in the swap path
@@ -216,7 +245,6 @@ contract Router is ReentrancyGuard {
 
         uint currentAmountIn = amountIn;
 
-        // Loop through each hop in the path, updating currentAmountIn for next hop
         for (uint i = 0; i < path.length - 1; i++) {
             address input = path[i];
             address output = path[i + 1];
@@ -228,7 +256,6 @@ contract Router is ReentrancyGuard {
             currentAmountIn = _executeSwap(input, output, to, currentAmountIn);
         }
 
-        // Final output check
         require(currentAmountIn >= minAmountOut, "Slippage: Output too low");
         amountOut = currentAmountIn;
 
@@ -284,7 +311,6 @@ contract Router is ReentrancyGuard {
         require(token0 != address(0), "Zero address");
     }
 
-    // Private helper function to perform a single hop swap
     function _executeSwap(
         address input,
         address output,
@@ -309,50 +335,5 @@ contract Router is ReentrancyGuard {
             : (amountOut, uint(0));
 
         pair.swap(amount0Out, amount1Out, to);
-    }
-
-    /// @dev Calculates optimal amounts of tokens A and B to add as liquidity,
-    // respecting reserve ratios and slippage constraints
-    function _calculateLiquidityAmounts(
-        address pairAddress,
-        uint amountADesired,
-        uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin
-    ) private view returns (uint amountA, uint amountB) {
-        Pair pair = Pair(pairAddress);
-        (uint reserveA, uint reserveB) = pair.getReserves();
-
-        // If no reserves, accept desired amounts
-        if (reserveA == 0 && reserveB == 0) {
-            return (amountADesired, amountBDesired);
-        }
-
-        // Calculate optimal B amount for given A
-        uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
-        if (amountBOptimal <= amountBDesired) {
-            require(amountBOptimal >= amountBMin, "Insufficient B amount");
-            return (amountADesired, amountBOptimal);
-        }
-
-        // Otherwise calculate optimal A amount for given B
-        uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
-        require(amountAOptimal <= amountADesired, "A optimal too high");
-        require(amountAOptimal >= amountAMin, "Insufficient A amount");
-        return (amountAOptimal, amountBDesired);
-    }
-
-    /// @dev Transfers tokens to the pair and mints LP tokens to the recipient
-    function _transferAndMint(
-        address tokenA,
-        address tokenB,
-        address pairAddress,
-        uint amountA,
-        uint amountB,
-        address to
-    ) private returns (uint liquidity) {
-        IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
-        IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
-        liquidity = Pair(pairAddress).mint(to);
     }
 }

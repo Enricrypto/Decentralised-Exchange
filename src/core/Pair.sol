@@ -19,8 +19,8 @@ contract Pair is ERC20, ReentrancyGuard {
     address public token1;
 
     // LP tokens custom name and symbol
-    string private name;
-    string private symbol;
+    string private name_;
+    string private symbol_;
 
     // Reserves of token0 and token1 (stored as 112-bit integers to save gas)
     uint112 private reserve0;
@@ -216,8 +216,8 @@ contract Pair is ERC20, ReentrancyGuard {
             ? (_token0, _token1)
             : (_token1, _token0);
 
-        name = _name;
-        symbol = _symbol;
+        name_ = _name;
+        symbol_ = _symbol;
     }
 
     // Function to get current reserves of LP contract
@@ -241,10 +241,10 @@ contract Pair is ERC20, ReentrancyGuard {
 
     // Override name and symbol functions from ERC-20
     function name() public view override returns (string memory) {
-        return name;
+        return name_;
     }
 
     function symbol() public view override returns (string memory) {
-        return symbol;
+        return symbol_;
     }
 }

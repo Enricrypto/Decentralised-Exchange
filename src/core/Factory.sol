@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../core/Pair.sol";
 
 contract Factory {
@@ -45,8 +46,8 @@ contract Factory {
         }
 
         // Fetch token symbols for naming LP token
-        string memory symbol0 = IERC20(token0).symbol();
-        string memory symbol1 = IERC20(token1).symbol();
+        string memory symbol0 = ERC20(token0).symbol();
+        string memory symbol1 = ERC20(token1).symbol();
 
         string memory lpName = string(
             abi.encodePacked("LP Token: ", symbol0, " / ", symbol1)

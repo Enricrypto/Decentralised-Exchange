@@ -53,80 +53,42 @@ contract Router is ReentrancyGuard {
     function addLiquidity(
         address tokenA,
         address tokenB,
-        uint amountADesired, // How much the user wants to add of tokenA
-        uint amountBDesired, // How much the user wants to add of tokenB
-        uint amountAMin, // Minimum tokenA accepted (slippage protection)
-        uint amountBMin, // Minimum tokenB accepted (slippage protection)
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
         address to
     )
         external
         nonReentrant
         returns (uint amountA, uint amountB, uint liquidity)
     {
-        // get/create pair
+        require(to != address(0), "Invalid LP recipient");
+
+        // Get or create the pair
         address pairAddress = factory.getPair(tokenA, tokenB);
         if (pairAddress == address(0)) {
             pairAddress = factory.createPair(tokenA, tokenB);
         }
 
-        Pair pair = Pair(pairAddress);
+        // Determine optimal amounts based on reserves
+        (amountA, amountB) = _calculateLiquidityAmounts(
+            pairAddress,
+            amountADesired,
+            amountBDesired,
+            amountAMin,
+            amountBMin
+        );
 
-        // Fetch reserves in pool
-        (uint reserve0, uint reserve1) = pair.getReserves();
-
-        // Map reserves correctly to tokenA/tokenB
-        (uint reserveA, uint reserveB) = tokenA == pair.token0()
-            ? (reserve0, reserve1)
-            : (reserve1, reserve0);
-
-        // Compute optimal amounts to add
-        if (reserveA == 0 && reserveB == 0) {
-            // Pool is empty (first liquidity provider)
-            // No ratio yet, so accept user's desired amounts as is
-            amountA = amountADesired;
-            amountB = amountBDesired;
-        } else {
-            // Pool exists and has reserves, so maintain the ratio
-            // Calculate optimal amount of token B given amountADesired
-            // If you want to add amountADesired of token A, the correct matching amount of token B — to maintain pool ratio — is amountBOptimal.
-            uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
-
-            // Is the amount of token B you’re willing to provide (amountBDesired) at least as much as
-            // what’s needed to match token A (amountBOptimal).
-            if (amountBOptimal <= amountBDesired) {
-                // The optimal amount of B needed is less than or equal to what user wants to provide
-
-                // Check if optimal B amount satisfies minimum required (slippage protection)
-                require(amountBOptimal >= amountBMin, "Insufficient B amount");
-
-                // We use all of amountADesired and we reduce token B to amountBOptimal (to match the correct ratio).
-                amountA = amountADesired;
-                amountB = amountBOptimal;
-            } else {
-                // Optimal B amount is greater than what user wants to provide
-                // User isn’t willing to provide enough token B for the amount of token A they want to add, so we based the ratio
-                // off the user's amountBDesired and we check the optimal amount of token A instead.
-
-                // Calculate optimal amount of A given amountBDesired
-                uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
-
-                // Check that optimal A is not more than what user wants to provide (should be true)
-                require(amountAOptimal <= amountADesired, "A optimal too high");
-
-                // Check if optimal A amount meets minimum amount required (slippage protection)
-                require(amountAOptimal >= amountAMin, "Insufficient A amount");
-
-                // Use user's full amountBDesired and optimal amountAOptimal to maintain ratio
-                amountA = amountAOptimal;
-                amountB = amountBDesired;
-            }
-        }
-
-        // Transfer tokens from the user to the pair contract
-        IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
-        IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
-
-        uint liquidity = pair.mint(msg.sender);
+        // Transfer tokens and mint LP
+        liquidity = _transferAndMint(
+            tokenA,
+            tokenB,
+            pairAddress,
+            amountA,
+            amountB,
+            to
+        );
 
         emit LiquidityAdded(
             msg.sender,
@@ -136,8 +98,6 @@ contract Router is ReentrancyGuard {
             amountB,
             liquidity
         );
-
-        return (amountA, amountB, liquidity);
     }
 
     // User can remove partial or all liquidity
@@ -151,6 +111,7 @@ contract Router is ReentrancyGuard {
     ) external nonReentrant returns (uint amountA, uint amountB) {
         address pairAddress = factory.getPair(tokenA, tokenB);
         require(pairAddress != address(0), "Pair doesn't exist");
+        require(to != address(0), "Invalid recipient");
 
         Pair pair = Pair(pairAddress);
 
@@ -165,6 +126,7 @@ contract Router is ReentrancyGuard {
         (uint amount0, uint amount1) = pair.burn(to);
 
         // Map token0/token1 to tokenA/tokenB
+        // Ensure the output matches the order of the tokens as provided by the user
         (address token0, ) = sortTokens(tokenA, tokenB);
         (amountA, amountB) = tokenA == token0
             ? (amount0, amount1)
@@ -172,7 +134,6 @@ contract Router is ReentrancyGuard {
 
         // Prevents "dust" or rounding errors from allowing a meaningless removeLiquidity call
         require(amountA > 0 && amountB > 0, "Zero output");
-
         // Slippage protection
         require(amountA >= amountAMin, "Insufficient A amount");
         require(amountB >= amountBMin, "Insufficient B amount");
@@ -197,6 +158,12 @@ contract Router is ReentrancyGuard {
         uint amountIn,
         uint minAmountOut
     ) external returns (uint amountOut) {
+        require(
+            tokenIn != address(0) && tokenOut != address(0),
+            "Invalid token address"
+        );
+        require(tokenIn != tokenOut, "Tokens must differ");
+
         address pairAddr = getPair(tokenIn, tokenOut);
         require(pairAddr != address(0), "Pair does not exist");
 
@@ -204,27 +171,27 @@ contract Router is ReentrancyGuard {
 
         // Get reserves from pair
         (uint reserve0, uint reserve1) = pair.getReserves();
+        address token0 = pair.token0();
 
-        // Determine input/output reserves order based on token order in pair
-        (uint reserveIn, uint reserveOut) = tokenIn == pair.token0()
+        // Determine input/output reserve order
+        (uint reserveIn, uint reserveOut) = tokenIn == token0
             ? (reserve0, reserve1)
             : (reserve1, reserve0);
 
-        // Calculate output amount using helper function (including platform fee)
+        // Calculate output amount
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
         require(amountOut >= minAmountOut, "Insufficient output amount");
 
-        // Transfer amountIn tokens from user to pair contract
+        // Transfer input tokens to the pair contract
         IERC20(tokenIn).safeTransferFrom(msg.sender, pairAddr, amountIn);
 
-        // Call pair.swap() - SPECIFY AMOUNT OUT DEPENDING ON TOKEN ORDER
-        if (tokenIn == pair.token0()) {
-            // Output tokens are token1, so amount0Out = 0, amount1Out = amountOut
-            pair.swap(0, amountOut, msg.sender);
-        } else {
-            // Output tokens are token0, so amount0Out = amountOut, amount1Out = 0
-            pair.swap(amountOut, 0, msg.sender);
-        }
+        // Determine swap output amounts
+        (uint amount0Out, uint amount1Out) = tokenIn == token0
+            ? (uint(0), amountOut)
+            : (amountOut, uint(0));
+
+        // Execute swap
+        pair.swap(amount0Out, amount1Out, msg.sender);
 
         // Emit event
         emit SwapExecuted(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
@@ -236,55 +203,29 @@ contract Router is ReentrancyGuard {
         uint minAmountOut
     ) external returns (uint amountOut) {
         require(path.length >= 2, "Path too short");
+        require(amountIn > 0, "Zero input");
+        require(minAmountOut > 0, "Zero min output");
 
         // Transfer the first token from sender to the first pair
         // path[0] = input token, path[1] = first intermediate token, path[2] = final output token
-        // The user has sent amountIn of path[0] (TokenA) to the first pair (TokenA/TokenB)
         IERC20(path[0]).safeTransferFrom(
             msg.sender,
             getPair(path[0], path[1]), // first pair in the swap path
             amountIn
         );
-        for (uint = 0; path.length - 1; i++) {
-            address input = path[i]; // token sent to the pair
+
+        uint currentAmountIn = amountIn;
+
+        // Loop through each hop in the path, updating currentAmountIn for next hop
+        for (uint i = 0; i < path.length - 1; i++) {
+            address input = path[i];
             address output = path[i + 1];
-            address pairAddr = getPair(input, output);
-            require(pairAddr != address(0), "Pair does not exist");
 
-            Pair pair = Pair(pairAddr);
-
-            uint currentAmountIn = amountIn;
-            (uint reserve0, uint reserve1) = pair.getReserves();
-
-            // Determine the direction of the swap
-            (uint reserveIn, uint reserveOut) = input == pair.token0()
-                ? (reserve0, reserve1)
-                : (reserve1, reserve0);
-
-            // Calculate amountOut
-            uint amountOutNext = getAmountOut(
-                currentAmountIn,
-                reserveIn,
-                reserveOut
-            );
-
-            // Determine output params for swap
-            (uint amount0Out, uint amount1Out) = input == pair.token0()
-                ? (uint(0), amountOutNext)
-                : (amountOutNext, uint(0));
-
-            // Determine recipient: next pair or final recipient
-            // (path.length - 2) is the index of the second-to-last token, there’s at least one more hop coming.
-            // input = output and output = path[i + 2] for second swap
             address to = i < path.length - 2
                 ? getPair(output, path[i + 2])
                 : msg.sender;
 
-            // Perform the swap
-            pair.swap(amount0Out, amount1Out, to);
-
-            // update amountIn for next transaction
-            currentAmountIn = amountOutNext;
+            currentAmountIn = _executeSwap(input, output, to, currentAmountIn);
         }
 
         // Final output check
@@ -301,7 +242,8 @@ contract Router is ReentrancyGuard {
         address tokenA,
         address tokenB
     ) public view returns (address) {
-        return factory.getPair(tokenA, tokenB);
+        (address token0, address token1) = sortTokens(tokenA, tokenB);
+        return factory.getPair(token0, token1);
     }
 
     // Function called by the UX (frontend) to get the correct amount of tokenB. You pass the amount of tokenA, to know
@@ -329,5 +271,88 @@ contract Router is ReentrancyGuard {
         uint numerator = amountInWithFee * reserveOut;
         uint denominator = (reserveIn * 1000) + amountInWithFee;
         amountOut = numerator / denominator;
+    }
+
+    function sortTokens(
+        address tokenA,
+        address tokenB
+    ) internal pure returns (address token0, address token1) {
+        require(tokenA != tokenB, "Identical addresses");
+        (token0, token1) = tokenA < tokenB
+            ? (tokenA, tokenB)
+            : (tokenB, tokenA);
+        require(token0 != address(0), "Zero address");
+    }
+
+    // Private helper function to perform a single hop swap
+    function _executeSwap(
+        address input,
+        address output,
+        address to,
+        uint amountIn
+    ) private returns (uint amountOut) {
+        address pairAddr = getPair(input, output);
+        require(pairAddr != address(0), "Pair does not exist");
+
+        Pair pair = Pair(pairAddr);
+
+        (uint reserve0, uint reserve1) = pair.getReserves();
+
+        (uint reserveIn, uint reserveOut) = input == pair.token0()
+            ? (reserve0, reserve1)
+            : (reserve1, reserve0);
+
+        amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
+
+        (uint amount0Out, uint amount1Out) = input == pair.token0()
+            ? (uint(0), amountOut)
+            : (amountOut, uint(0));
+
+        pair.swap(amount0Out, amount1Out, to);
+    }
+
+    /// @dev Calculates optimal amounts of tokens A and B to add as liquidity,
+    // respecting reserve ratios and slippage constraints
+    function _calculateLiquidityAmounts(
+        address pairAddress,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin
+    ) private view returns (uint amountA, uint amountB) {
+        Pair pair = Pair(pairAddress);
+        (uint reserveA, uint reserveB) = pair.getReserves();
+
+        // If no reserves, accept desired amounts
+        if (reserveA == 0 && reserveB == 0) {
+            return (amountADesired, amountBDesired);
+        }
+
+        // Calculate optimal B amount for given A
+        uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
+        if (amountBOptimal <= amountBDesired) {
+            require(amountBOptimal >= amountBMin, "Insufficient B amount");
+            return (amountADesired, amountBOptimal);
+        }
+
+        // Otherwise calculate optimal A amount for given B
+        uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
+        require(amountAOptimal <= amountADesired, "A optimal too high");
+        require(amountAOptimal >= amountAMin, "Insufficient A amount");
+        return (amountAOptimal, amountBDesired);
+    }
+
+    /// @dev Transfers tokens to the pair and mints LP tokens to the recipient
+    function _transferAndMint(
+        address tokenA,
+        address tokenB,
+        address pairAddress,
+        uint amountA,
+        uint amountB,
+        address to
+    ) private returns (uint liquidity) {
+        IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
+        IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
+        liquidity = Pair(pairAddress).mint(to);
     }
 }

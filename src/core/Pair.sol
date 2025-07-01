@@ -212,11 +212,8 @@ contract Pair is ERC20, ReentrancyGuard {
         require(_token0 != _token1, "Identical tokens");
         require(_token0 != address(0) && _token1 != address(0), "Zero address");
 
-        // rearrange order of tokens
-        (token0, token1) = _token0 < _token1
-            ? (_token0, _token1)
-            : (_token1, _token0);
-
+        token0 = _token0;
+        token1 = _token1;
         name_ = _name;
         symbol_ = _symbol;
 

@@ -19,7 +19,9 @@ contract Factory {
     // Only one unique pool per token pair is allowed.
     function createPair(
         address tokenA,
-        address tokenB
+        address tokenB,
+        string calldata name,
+        string calldata symbol
     ) external returns (address pair) {
         require(tokenA != tokenB, "Factory: IDENTICAL_ADDRESSES");
         // Sort tokens to avoid duplicates
@@ -31,7 +33,10 @@ contract Factory {
 
         // Deploy new Pair contract with create2
         // type(Pair).creationCode gets the raw compiled bytecode of the Pair contract.
-        bytes memory bytecode = type(Pair).creationCode;
+        bytes memory bytecode = abi.encodePacked(
+            type(Pair).creationCode,
+            abi.encode(address(this)) // Pass factory as constructor argument
+        );
         // salt is computed by hashing the token addresses (sorted) — this ensures the salt is unique for each token pair.
         bytes32 salt = keccak256(abi.encodePacked(token0, token1));
         // assembly calls the create2 opcode:
@@ -45,18 +50,7 @@ contract Factory {
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
 
-        // Fetch token symbols for naming LP token
-        string memory symbol0 = ERC20(token0).symbol();
-        string memory symbol1 = ERC20(token1).symbol();
-
-        string memory lpName = string(
-            abi.encodePacked("LP Token: ", symbol0, " / ", symbol1)
-        );
-        string memory lpSymbol = string(
-            abi.encodePacked("LP-", symbol0, "-", symbol1)
-        );
-
-        Pair(pair).initialize(token0, token1, lpName, lpSymbol);
+        Pair(pair).initialize(token0, token1, name, symbol);
 
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair; // populate mapping both ways

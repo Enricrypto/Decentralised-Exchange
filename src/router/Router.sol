@@ -67,53 +67,27 @@ contract Router is ReentrancyGuard {
 
         // Get or create pair
         address pairAddress = factory.getPair(tokenA, tokenB);
-        if (pairAddress == address(0)) {
-            pairAddress = factory.createPair(tokenA, tokenB);
-        }
+        require(pairAddress != address(0), "Pair has not been created");
 
         Pair pair = Pair(pairAddress);
 
-        // Scoped block to avoid "stack too deep" error from too many local variables
         {
-            (uint reserveA, uint reserveB) = pair.getReserves(); // Reserves already match tokenA/tokenB order
+            (uint reserveA, uint reserveB) = _getOrderedReserves(
+                pair,
+                tokenA,
+                tokenB
+            );
 
-            if (reserveA == 0 && reserveB == 0) {
-                // First liquidity provider
-                // No ratio yet, so accept user's desired amounts as is
-                (amountA, amountB) = (amountADesired, amountBDesired);
-            } else {
-                // Maintain ratio based on reserves
-                uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
-                if (amountBOptimal <= amountBDesired) {
-                    // The optimal amount of B needed is less than or equal to what user wants to provide
-                    // Check if optimal B amount satisfies minimum required (slippage protection)
-                    require(
-                        amountBOptimal >= amountBMin,
-                        "Insufficient B amount"
-                    );
-                    // We use all of amountADesired and we reduce token B to amountBOptimal (to match the correct ratio).
-                    (amountA, amountB) = (amountADesired, amountBOptimal);
-                } else {
-                    uint amountAOptimal = quote(
-                        amountBDesired,
-                        reserveB,
-                        reserveA
-                    );
-                    // Check that optimal A is not more than what user wants to provide (should be true)
-                    require(
-                        amountAOptimal <= amountADesired,
-                        "A optimal too high"
-                    );
-                    // Check if optimal A amount meets minimum amount required (slippage protection)
-                    require(
-                        amountAOptimal >= amountAMin,
-                        "Insufficient A amount"
-                    );
-                    // Use user's full amountBDesired and optimal amountAOptimal to maintain ratio
-                    (amountA, amountB) = (amountAOptimal, amountBDesired);
-                }
-            }
+            (amountA, amountB) = _computeAmounts(
+                amountADesired,
+                amountBDesired,
+                reserveA,
+                reserveB,
+                amountAMin,
+                amountBMin
+            );
         }
+
         // Transfer tokens and mint LP
         IERC20(tokenA).safeTransferFrom(msg.sender, pairAddress, amountA);
         IERC20(tokenB).safeTransferFrom(msg.sender, pairAddress, amountB);
@@ -157,7 +131,7 @@ contract Router is ReentrancyGuard {
 
         // Map token0/token1 to tokenA/tokenB
         // Ensure the output matches the order of the tokens as provided by the user
-        (address token0, ) = sortTokens(tokenA, tokenB);
+        (address token0, ) = _sortTokens(tokenA, tokenB);
         (amountA, amountB) = tokenA == token0
             ? (amount0, amount1)
             : (amount1, amount0);
@@ -262,19 +236,18 @@ contract Router is ReentrancyGuard {
         emit MultiSwap(msg.sender, path, amountIn, amountOut);
     }
 
-    // HELPER FUNCTIONS
+    // =====================
+    // Public Helper Functions
+    // =====================
 
-    // Helper function to get pair address from factory for tokens
     function getPair(
         address tokenA,
         address tokenB
     ) public view returns (address) {
-        (address token0, address token1) = sortTokens(tokenA, tokenB);
+        (address token0, address token1) = _sortTokens(tokenA, tokenB);
         return factory.getPair(token0, token1);
     }
 
-    // Function called by the UX (frontend) to get the correct amount of tokenB. You pass the amount of tokenA, to know
-    // the value on tokenB required to provide liquidity
     function quote(
         uint amountA,
         uint reserveA,
@@ -285,7 +258,6 @@ contract Router is ReentrancyGuard {
         amountB = (amountA * reserveB) / reserveA;
     }
 
-    // Calculates output amount based on reserves and amountIn (using constant product formula with 0.3% fee)
     function getAmountOut(
         uint amountIn,
         uint reserveIn,
@@ -300,7 +272,11 @@ contract Router is ReentrancyGuard {
         amountOut = numerator / denominator;
     }
 
-    function sortTokens(
+    // =====================
+    // Internal Helper Functions
+    // =====================
+
+    function _sortTokens(
         address tokenA,
         address tokenB
     ) internal pure returns (address token0, address token1) {
@@ -310,6 +286,76 @@ contract Router is ReentrancyGuard {
             : (tokenB, tokenA);
         require(token0 != address(0), "Zero address");
     }
+
+    function _calculateOptimalAmounts(
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
+        uint reserveA,
+        uint reserveB
+    ) internal pure returns (uint amountA, uint amountB) {
+        if (reserveA == 0 && reserveB == 0) {
+            return (amountADesired, amountBDesired);
+        }
+
+        uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
+        if (amountBOptimal <= amountBDesired) {
+            require(amountBOptimal >= amountBMin, "Insufficient B amount");
+            return (amountADesired, amountBOptimal);
+        } else {
+            uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
+            require(amountAOptimal <= amountADesired, "A optimal too high");
+            require(amountAOptimal >= amountAMin, "Insufficient A amount");
+            return (amountAOptimal, amountBDesired);
+        }
+    }
+
+    function _getOrderedReserves(
+        Pair pair,
+        address tokenA,
+        address tokenB
+    ) internal view returns (uint reserveA, uint reserveB) {
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+        (uint reserve0, uint reserve1) = pair.getReserves();
+
+        if (tokenA == token0 && tokenB == token1) {
+            (reserveA, reserveB) = (reserve0, reserve1);
+        } else if (tokenA == token1 && tokenB == token0) {
+            (reserveA, reserveB) = (reserve1, reserve0);
+        } else {
+            revert("Invalid token pair");
+        }
+    }
+
+    function _computeAmounts(
+        uint amountADesired,
+        uint amountBDesired,
+        uint reserveA,
+        uint reserveB,
+        uint amountAMin,
+        uint amountBMin
+    ) internal pure returns (uint amountA, uint amountB) {
+        if (reserveA == 0 && reserveB == 0) {
+            (amountA, amountB) = (amountADesired, amountBDesired);
+        } else {
+            uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
+            if (amountBOptimal <= amountBDesired) {
+                require(amountBOptimal >= amountBMin, "Insufficient B amount");
+                (amountA, amountB) = (amountADesired, amountBOptimal);
+            } else {
+                uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
+                require(amountAOptimal <= amountADesired, "A optimal too high");
+                require(amountAOptimal >= amountAMin, "Insufficient A amount");
+                (amountA, amountB) = (amountAOptimal, amountBDesired);
+            }
+        }
+    }
+
+    // =====================
+    // Private Helper Functions
+    // =====================
 
     function _executeSwap(
         address input,

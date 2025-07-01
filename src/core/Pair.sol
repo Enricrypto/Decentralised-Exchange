@@ -38,6 +38,7 @@ contract Pair is ERC20, ReentrancyGuard {
         address to
     );
     event Sync(uint112 reserve0, uint112 reserve1);
+    event Initialized(address token0, address token1);
 
     constructor(address _factory) ERC20("", "") {
         require(_factory != address(0), "Invalid factory");
@@ -200,8 +201,8 @@ contract Pair is ERC20, ReentrancyGuard {
     function initialize(
         address _token0,
         address _token1,
-        string memory _name,
-        string memory _symbol
+        string calldata _name,
+        string calldata _symbol
     ) external onlyFactory {
         require(
             token0 == address(0) && token1 == address(0),
@@ -218,6 +219,8 @@ contract Pair is ERC20, ReentrancyGuard {
 
         name_ = _name;
         symbol_ = _symbol;
+
+        emit Initialized(token0, token1);
     }
 
     // Function to get current reserves of LP contract

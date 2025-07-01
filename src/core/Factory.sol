@@ -19,9 +19,7 @@ contract Factory {
     // Only one unique pool per token pair is allowed.
     function createPair(
         address tokenA,
-        address tokenB,
-        string calldata name,
-        string calldata symbol
+        address tokenB
     ) external returns (address pair) {
         require(tokenA != tokenB, "Factory: IDENTICAL_ADDRESSES");
         // Sort tokens to avoid duplicates
@@ -50,7 +48,7 @@ contract Factory {
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
 
-        Pair(pair).initialize(token0, token1, name, symbol);
+        Pair(pair).initialize(token0, token1);
 
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair; // populate mapping both ways

@@ -18,10 +18,6 @@ contract Pair is ERC20, ReentrancyGuard {
     address public token0;
     address public token1;
 
-    // LP tokens custom name and symbol
-    string private name_;
-    string private symbol_;
-
     // Reserves of token0 and token1 (stored as 112-bit integers to save gas)
     uint112 private reserve0;
     uint112 private reserve1;
@@ -40,7 +36,10 @@ contract Pair is ERC20, ReentrancyGuard {
     event Sync(uint112 reserve0, uint112 reserve1);
     event Initialized(address token0, address token1);
 
-    constructor(address _factory) ERC20("", "") {
+    // The LP token uses a generic name and symbol for all pairs (e.g., "MyDEX LP" and "LP").
+    // This simplifies deployment and avoids needing to pass custom names/symbols per pair.
+    // Token0 and token1 are tracked internally for each pair contract.
+    constructor(address _factory) ERC20("MyDEX LP", "LP") {
         require(_factory != address(0), "Invalid factory");
         factory = _factory;
     }
@@ -133,9 +132,7 @@ contract Pair is ERC20, ReentrancyGuard {
 
     // Swaps tokens from one side to the other
     // You’re allowed to specify one token to receive (amount0Out or amount1Out), and leave the other as 0
-    // - FIXED THIS, no amountIn, should work by itself.
-    // 1. you require exactly one of amount0Out or amount1Out to be non-zero (never both)
-    // 2. The check if (amount0Out > 0) and if (amount1Out > 0) helps infer which token is input and which is output
+    // The check if (amount0Out > 0) and if (amount1Out > 0) helps infer which token is input and which is output
     // - How to deal with slippage?
     // 1. It lets the swap function be simple and generic, without needing to know about user preferences like slippage tolerance.
     // 2. It forces users to use the router to perform swaps safely, otherwise calling swap directly is risky and inconvenient.
@@ -198,12 +195,7 @@ contract Pair is ERC20, ReentrancyGuard {
 
     // HELPER FUNCTIONS
     // Initialization for `CREATE2` deployments
-    function initialize(
-        address _token0,
-        address _token1,
-        string calldata _name,
-        string calldata _symbol
-    ) external onlyFactory {
+    function initialize(address _token0, address _token1) external onlyFactory {
         require(
             token0 == address(0) && token1 == address(0),
             "Already initialized"
@@ -214,8 +206,6 @@ contract Pair is ERC20, ReentrancyGuard {
 
         token0 = _token0;
         token1 = _token1;
-        name_ = _name;
-        symbol_ = _symbol;
 
         emit Initialized(token0, token1);
     }
@@ -237,14 +227,5 @@ contract Pair is ERC20, ReentrancyGuard {
         blockTimestampLast = uint32(block.timestamp);
 
         emit Sync(reserve0, reserve1);
-    }
-
-    // Override name and symbol functions from ERC-20
-    function name() public view override returns (string memory) {
-        return name_;
-    }
-
-    function symbol() public view override returns (string memory) {
-        return symbol_;
     }
 }

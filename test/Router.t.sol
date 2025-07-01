@@ -36,12 +36,7 @@ contract FactoryTest is Test {
         // Deploy router contract
         router = new Router(address(factory));
 
-        pairAddress = factory.createPair(
-            address(tokenA),
-            address(tokenB),
-            "LP Token",
-            "LP-TKN"
-        );
+        pairAddress = factory.createPair(address(tokenA), address(tokenB));
         pair = Pair(pairAddress);
 
         // Check right order of pair tokens
@@ -65,12 +60,9 @@ contract FactoryTest is Test {
     }
 
     function testCreatePair() public {
-        string memory lpName = "LP Token: USDC / DAI";
-        string memory lpSymbol = "LP-USDC-DAI";
-
         vm.startPrank(address(factory));
         // Create pair for USDC / DAI
-        pairAddress = factory.createPair(USDC, DAI, lpName, lpSymbol);
+        pairAddress = factory.createPair(USDC, DAI);
         vm.stopPrank();
 
         // Assert that the pair address is not zero

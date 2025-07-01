@@ -68,6 +68,9 @@ contract Router is ReentrancyGuard {
         // Get or create pair
         address pairAddress = factory.getPair(tokenA, tokenB);
         require(pairAddress != address(0), "Pair has not been created");
+        if (pairAddress == address(0)) {
+            pairAddress = factory.createPair(tokenA, tokenB);
+        }
 
         Pair pair = Pair(pairAddress);
 

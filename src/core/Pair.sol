@@ -68,10 +68,10 @@ contract Pair is ERC20, ReentrancyGuard {
         uint amount1 = balance1 - _reserve1;
 
         // First LP mints sqrt(x*y) LP tokens
-        // Others mint based on proportion of reserves
         if (totalSupply() == 0) {
             liquidity = Math.sqrt(amount0 * amount1);
         } else {
+            // Others mint based on proportion of reserves
             liquidity = Math.min(
                 (amount0 * totalSupply()) / _reserve0,
                 (amount1 * totalSupply()) / _reserve1

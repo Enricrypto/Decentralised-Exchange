@@ -58,9 +58,9 @@ contract FactoryTest is Test {
         token1BC = isTokenB0 ? tokenC : tokenB;
 
         // Transfer some tokens to user for tests
-        tokenA.transfer(user, 200 * 1e18); // 200 TKA to user
-        tokenB.transfer(user, 200 * 1e18); // 200 TKB to user
-        tokenC.transfer(user, 200 * 1e18); // 200 TKC to user
+        deal(address(tokenA), user, 200 * 1e18); // 200 TKA to user
+        deal(address(tokenB), user, 200 * 1e18); // 200 TKB to user
+        deal(address(tokenC), user, 200 * 1e18); // 200 TKC to user
 
         vm.startPrank(user);
         tokenA.approve(address(pair), type(uint).max);

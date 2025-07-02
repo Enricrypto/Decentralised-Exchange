@@ -1,5 +1,10 @@
 # Decentralised Exchange (DEX) Solidity Contracts
 
+![Solidity Version](https://img.shields.io/badge/Solidity-^0.8.20-blue.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Build With Foundry](https://img.shields.io/badge/Tested%20With-Foundry-red)
+![GitHub last commit](https://img.shields.io/github/last-commit/Enricrypto/Decentralised-Exchange)
+
 This repository contains a simple implementation of a decentralized exchange (DEX) in Solidity, inspired by Uniswap V2. It includes contracts for creating liquidity pools (pairs), managing liquidity, and swapping ERC-20 tokens.
 
 # 📋 Overview

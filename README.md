@@ -37,6 +37,8 @@ The DEX enables users to:
 
 🧮 Contains helper functions to calculate swap outputs and optimal liquidity amounts
 
+🔗 Supports multi-hop swaps: Enables routing through multiple pairs for indirect token exchanges
+
 # ✨ Features
 🪙 ERC-20 token support: Uses OpenZeppelin IERC20 interface for token transfers
 
@@ -49,6 +51,8 @@ The DEX enables users to:
 🎯 Deterministic pair deployment: Using CREATE2 to predict pair addresses
 
 ⚡ Gas optimization: Uses uint112 for reserve storage and minimizes redundant calls
+
+🔀 Multi-hop swaps: Route through multiple pairs for complex token paths
 
 # ⚙️ Usage
 📦 Deploy the Factory contract

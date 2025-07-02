@@ -163,7 +163,7 @@ contract Router is ReentrancyGuard {
         address tokenIn,
         address tokenOut,
         uint amountIn,
-        uint minAmountOut
+        uint minAmountOut // slippage protection parameter
     ) external returns (uint amountOut) {
         require(
             tokenIn != address(0) && tokenOut != address(0),

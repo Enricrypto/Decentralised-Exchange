@@ -26,6 +26,8 @@ contract FactoryTest is Test {
     address public DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     address public USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
+    address[] public path;
+
     function setUp() public {
         // Fork the Ethereum mainnet at the latest block
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
@@ -451,12 +453,10 @@ contract FactoryTest is Test {
         uint N = 3;
         address[] memory path = new address[](N);
 
-        for (uint i = 0; i < N; i++) {
-            // Fill the path array elements, for example:
-            if (i == 0) path[i] = address(tokenA);
-            else if (i == 1) path[i] = address(tokenB);
-            else if (i == 2) path[i] = address(tokenC);
-        }
+        // Fill the path array elements, for example:
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        path[2] = address(tokenC);
 
         // Record initial balances
         uint beforeTokenABalance = tokenA.balanceOf(user);

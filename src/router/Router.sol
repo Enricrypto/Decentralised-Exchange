@@ -63,14 +63,15 @@ contract Router is ReentrancyGuard {
         nonReentrant
         returns (uint amountA, uint amountB, uint liquidity)
     {
+        require(
+            tokenA != address(0) && tokenB != address(0),
+            "Invalid token address"
+        );
         require(to != address(0), "Invalid LP recipient");
 
-        // Get or create pair
+        // Get pair and check if it exists
         address pairAddress = factory.getPair(tokenA, tokenB);
         require(pairAddress != address(0), "Pair has not been created");
-        if (pairAddress == address(0)) {
-            pairAddress = factory.createPair(tokenA, tokenB);
-        }
 
         Pair pair = Pair(pairAddress);
 
@@ -116,9 +117,14 @@ contract Router is ReentrancyGuard {
         uint amountBMin, // Min tokenB to receive
         address to
     ) external nonReentrant returns (uint amountA, uint amountB) {
+        require(
+            tokenA != address(0) && tokenB != address(0),
+            "Invalid token address"
+        );
+        require(to != address(0), "Invalid recipient");
+
         address pairAddress = factory.getPair(tokenA, tokenB);
         require(pairAddress != address(0), "Pair doesn't exist");
-        require(to != address(0), "Invalid recipient");
 
         Pair pair = Pair(pairAddress);
 
@@ -210,6 +216,9 @@ contract Router is ReentrancyGuard {
         uint minAmountOut
     ) external returns (uint amountOut) {
         require(path.length >= 2, "Path too short");
+        for (uint i = 0; i < path.length; i++) {
+            require(path[i] != address(0), "Invalid token address in path");
+        }
         require(amountIn > 0, "Zero input");
         require(minAmountOut > 0, "Zero min output");
 
@@ -225,11 +234,13 @@ contract Router is ReentrancyGuard {
         for (uint i = 0; i < path.length - 1; i++) {
             address input = path[i];
             address output = path[i + 1];
+            address pairAddr = getPair(input, output);
+            require(pairAddr != address(0), "Pair does not exist in path");
 
             // Case: not the last swap
             address to = i < path.length - 2 // If you're not at the last swap, you want to send the output tokens to the next pair
-                ? // in the path so it can be swapped again.
-                getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
+            // in the path so it can be swapped again.
+                ? getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
                 : msg.sender;
             // amount becomes the new input for the next hop.
             amount = _executeSwap(input, output, to, amount);
@@ -271,6 +282,7 @@ contract Router is ReentrancyGuard {
         require(amountIn > 0, "AmountIn must be > 0");
         require(reserveIn > 0 && reserveOut > 0, "Invalid reserves");
 
+        // 0.3% fee is applied: fee denominator is 1000, fee numerator is 997
         uint amountInWithFee = amountIn * 997;
         uint numerator = amountInWithFee * reserveOut;
         uint denominator = (reserveIn * 1000) + amountInWithFee;

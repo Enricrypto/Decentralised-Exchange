@@ -220,7 +220,7 @@ contract Router is ReentrancyGuard {
             amountIn
         );
 
-        uint currentAmountIn = amountIn;
+        uint amount = amountIn;
 
         for (uint i = 0; i < path.length - 1; i++) {
             address input = path[i];
@@ -228,15 +228,15 @@ contract Router is ReentrancyGuard {
 
             // Case: not the last swap
             address to = i < path.length - 2 // If you're not at the last swap, you want to send the output tokens to the next pair
-            // in the path so it can be swapped again.
-                ? getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
+                ? // in the path so it can be swapped again.
+                getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
                 : msg.sender;
-            // Assign amountOut to currentAmount — because it becomes the new input for the next hop.
-            currentAmount = _executeSwap(input, output, to, currentAmountIn);
+            // amount becomes the new input for the next hop.
+            amount = _executeSwap(input, output, to, amount);
         }
 
-        require(currentAmount >= minAmountOut, "Slippage: Output too low");
-        amountOut = currentAmount;
+        require(amount >= minAmountOut, "Slippage: Output too low");
+        amountOut = amount;
 
         emit MultiSwap(msg.sender, path, amountIn, amountOut);
     }
@@ -339,25 +339,25 @@ contract Router is ReentrancyGuard {
     // =====================
 
     function _executeSwap(
-        address input,
-        address output,
+        address tokenIn,
+        address tokenOut,
         address to,
         uint amountIn
     ) private returns (uint amountOut) {
-        address pairAddr = getPair(input, output);
+        address pairAddr = getPair(tokenIn, tokenOut);
         require(pairAddr != address(0), "Pair does not exist");
 
         Pair pair = Pair(pairAddr);
 
         (uint reserve0, uint reserve1) = pair.getReserves();
 
-        (uint reserveIn, uint reserveOut) = input == pair.token0()
+        (uint reserveIn, uint reserveOut) = tokenIn == pair.token0()
             ? (reserve0, reserve1)
             : (reserve1, reserve0);
 
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
 
-        (uint amount0Out, uint amount1Out) = input == pair.token0()
+        (uint amount0Out, uint amount1Out) = tokenIn == pair.token0()
             ? (uint(0), amountOut)
             : (amountOut, uint(0));
 

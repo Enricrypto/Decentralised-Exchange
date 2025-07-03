@@ -81,7 +81,7 @@ contract Router is ReentrancyGuard {
                 tokenB
             );
 
-            (amountA, amountB) = _computeAmounts(
+            (amountA, amountB) = _calculateOptimalAmounts(
                 amountADesired,
                 amountBDesired,
                 reserveA,
@@ -329,30 +329,6 @@ contract Router is ReentrancyGuard {
             (reserveA, reserveB) = (reserve1, reserve0);
         } else {
             revert("Invalid token pair");
-        }
-    }
-
-    function _computeAmounts(
-        uint amountADesired,
-        uint amountBDesired,
-        uint reserveA,
-        uint reserveB,
-        uint amountAMin,
-        uint amountBMin
-    ) internal pure returns (uint amountA, uint amountB) {
-        if (reserveA == 0 && reserveB == 0) {
-            (amountA, amountB) = (amountADesired, amountBDesired);
-        } else {
-            uint amountBOptimal = quote(amountADesired, reserveA, reserveB);
-            if (amountBOptimal <= amountBDesired) {
-                require(amountBOptimal >= amountBMin, "Insufficient B amount");
-                (amountA, amountB) = (amountADesired, amountBOptimal);
-            } else {
-                uint amountAOptimal = quote(amountBDesired, reserveB, reserveA);
-                require(amountAOptimal <= amountADesired, "A optimal too high");
-                require(amountAOptimal >= amountAMin, "Insufficient A amount");
-                (amountA, amountB) = (amountAOptimal, amountBDesired);
-            }
         }
     }
 

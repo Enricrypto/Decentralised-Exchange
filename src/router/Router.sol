@@ -226,15 +226,17 @@ contract Router is ReentrancyGuard {
             address input = path[i];
             address output = path[i + 1];
 
-            address to = i < path.length - 2
-                ? getPair(output, path[i + 2])
+            // Case: not the last swap
+            address to = i < path.length - 2 // If you're not at the last swap, you want to send the output tokens to the next pair
+            // in the path so it can be swapped again.
+                ? getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
                 : msg.sender;
-
-            currentAmountIn = _executeSwap(input, output, to, currentAmountIn);
+            // Assign amountOut to currentAmount — because it becomes the new input for the next hop.
+            currentAmount = _executeSwap(input, output, to, currentAmountIn);
         }
 
-        require(currentAmountIn >= minAmountOut, "Slippage: Output too low");
-        amountOut = currentAmountIn;
+        require(currentAmount >= minAmountOut, "Slippage: Output too low");
+        amountOut = currentAmount;
 
         emit MultiSwap(msg.sender, path, amountIn, amountOut);
     }

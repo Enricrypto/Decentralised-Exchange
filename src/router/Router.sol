@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.0;
 
 import "../core/Factory.sol";
 import "../core/Pair.sol";
@@ -239,8 +239,8 @@ contract Router is ReentrancyGuard {
 
             // Case: not the last swap
             address to = i < path.length - 2 // If you're not at the last swap, you want to send the output tokens to the next pair
-            // in the path so it can be swapped again.
-                ? getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
+                ? // in the path so it can be swapped again.
+                getPair(output, path[i + 2]) // Case: last swap. Final hop, output tokens need to be send to the user
                 : msg.sender;
             // amount becomes the new input for the next hop.
             amount = _executeSwap(input, output, to, amount);

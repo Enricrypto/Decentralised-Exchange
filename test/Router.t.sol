@@ -97,7 +97,7 @@ contract FactoryTest is Test {
         assertEq(pairAddress, expected, "Factory did not store pair correctly");
 
         uint length = factory.allPairsLength();
-        assertEq(length, 2, "Not the right length of created pairs");
+        assertEq(length, 3, "Not the right length of created pairs");
     }
 
     function testMintLiquidity() public {

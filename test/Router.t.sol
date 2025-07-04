@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test, console} from "lib/forge-std/src/Test.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import "../src/core/Factory.sol";
 import "../src/core/Pair.sol";
@@ -30,7 +30,7 @@ contract FactoryTest is Test {
 
     function setUp() public {
         // Fork the Ethereum mainnet at the latest block
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
+        vm.createSelectFork(vm.envString("ARB_RPC_URL"));
 
         // Mint 1,000 tokens (1e3 * 1e18)
         uint initialSupply = 1000 * 1e18;

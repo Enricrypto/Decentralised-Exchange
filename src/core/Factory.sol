@@ -41,10 +41,10 @@ contract Factory {
         assembly {
             // create2 allows deterministic contract deployment, meaning the address of the Pair contract will always be the same for a
             // given input (in this case: token0 and token1)
-            // 0 is the amount of ETH sent (none here)
-            // add(bytecode, 32) is the location of the actual code in memory (skipping the first 32 bytes which is the length prefix of the bytecode bytes array)
-            // mload(bytecode) loads the size of the bytecode
-            // salt is the salt used to deterministically generate the address
+            // - 0 is the amount of ETH sent (none here)
+            // - add(bytecode, 32) is the location of the actual code in memory (skipping the first 32 bytes which is the length prefix of the bytecode bytes array)
+            // - mload(bytecode) loads the size of the bytecode
+            // - salt is the salt used to deterministically generate the address
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
 

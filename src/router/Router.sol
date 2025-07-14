@@ -85,10 +85,10 @@ contract Router is ReentrancyGuard {
             (amountA, amountB) = _calculateOptimalAmounts(
                 amountADesired,
                 amountBDesired,
-                reserveA,
-                reserveB,
                 amountAMin,
-                amountBMin
+                amountBMin,
+                reserveA,
+                reserveB
             );
         }
 
@@ -160,6 +160,8 @@ contract Router is ReentrancyGuard {
             amountB,
             to
         );
+
+        return (amountA, amountB);
     }
 
     // Swap tokenIn -> tokenOut for exact amountIn

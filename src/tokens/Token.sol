@@ -11,4 +11,9 @@ contract Token is ERC20 {
     ) ERC20(name, symbol) {
         _mint(msg.sender, initialSupply);
     }
+
+     // Anyone can mint tokens to their own address
+    function mint(uint256 amount) external {
+        _mint(msg.sender, amount);
+    }
 }

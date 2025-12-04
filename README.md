@@ -1,4 +1,4 @@
-# 🔄 Decentralized Exchange (DEX) - Uniswap V2 Architecture
+# Decentralized Exchange (DEX) - Uniswap V2 Architecture
 
 A production-ready Solidity implementation of an Automated Market Maker (AMM) DEX featuring Uniswap V2 architecture. Includes liquidity pools, multi-hop routing, and constant product market making with comprehensive security patterns and gas optimizations.
 
